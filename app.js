@@ -352,7 +352,7 @@ function exportarReporte() {
     mostrarToast('📥 Reporte exportado exitosamente', 'success');
 }
 
-// Gestión de Pagos Pendientes
+// Gestión de Pagos Pendientes - Agrupado por comprador
 function actualizarPendientes() {
     const ventasPendientes = ventas.filter(v => v.metodo === 'pendiente');
     const listaPendientes = document.getElementById('listaPendientes');
@@ -382,32 +382,41 @@ function actualizarPendientes() {
         return;
     }
     
+    // Agrupar por comprador
+    const compradorMap = {};
+    ventasPendientes.forEach(venta => {
+        if (!compradorMap[venta.comprador]) {
+            compradorMap[venta.comprador] = {
+                nombre: venta.comprador,
+                ventas: [],
+                total: 0
+            };
+        }
+        compradorMap[venta.comprador].ventas.push(venta);
+        compradorMap[venta.comprador].total += venta.valor;
+    });
+    
+    // Convertir a array y ordenar por deuda (mayor a menor)
+    const compradoresArray = Object.values(compradorMap).sort((a, b) => b.total - a.total);
+    
+    // Mostrar lista agrupada
     listaPendientes.innerHTML = '';
-    ventasPendientes.forEach((venta, index) => {
-        const ventaIndex = ventas.indexOf(venta);
-        const fecha = new Date(venta.fecha);
-        const diasPendiente = Math.floor((new Date() - fecha) / (1000 * 60 * 60 * 24));
-        
+    compradoresArray.forEach(comprador => {
         const div = document.createElement('div');
-        div.className = 'pendiente-item';
+        div.className = 'comprador-group';
+        div.onclick = () => mostrarDetalleComprador(comprador);
+        
+        const fechaMasAntigua = new Date(Math.min(...comprador.ventas.map(v => new Date(v.fecha))));
+        const diasPendiente = Math.floor((new Date() - fechaMasAntigua) / (1000 * 60 * 60 * 24));
+        
         div.innerHTML = `
-            <div class="pendiente-header">
-                <div class="pendiente-info">
-                    <div class="pendiente-comprador">👤 ${venta.comprador}</div>
-                    <div class="pendiente-producto">📦 ${venta.producto}</div>
-                </div>
-                <div class="pendiente-monto">${formatearMoneda(venta.valor)}</div>
+            <div class="comprador-group-header">
+                <div class="comprador-nombre">👤 ${comprador.nombre}</div>
+                <div class="comprador-deuda">${formatearMoneda(comprador.total)}</div>
             </div>
-            <div class="pendiente-footer">
-                <div class="pendiente-fecha">
-                    📅 ${fecha.toLocaleDateString('es-CL')}
-                    ${diasPendiente > 0 ? `<span style="color:#ff9800;">(${diasPendiente} día${diasPendiente !== 1 ? 's' : ''} pendiente)</span>` : ''}
-                </div>
-                <div class="pendiente-actions">
-                    <button class="btn-pagar" onclick="marcarComoPagado(${ventaIndex}, 'efectivo')">💵 Efectivo</button>
-                    <button class="btn-pagar" onclick="marcarComoPagado(${ventaIndex}, 'transferencia')">💳 Transferencia</button>
-                    <button class="btn-eliminar-venta" onclick="eliminarVenta(${ventaIndex})">🗑️</button>
-                </div>
+            <div class="comprador-info">
+                <span>📦 ${comprador.ventas.length} venta${comprador.ventas.length !== 1 ? 's' : ''}</span>
+                <span>⏰ Desde hace ${diasPendiente} día${diasPendiente !== 1 ? 's' : ''}</span>
             </div>
         `;
         listaPendientes.appendChild(div);
@@ -419,15 +428,33 @@ function marcarComoPagado(index, metodoPago) {
     if (index < 0 || index >= ventas.length) return;
     
     const venta = ventas[index];
+    const nombreComprador = venta.comprador;
     const confirmacion = confirm(`¿Marcar como pagado con ${metodoPago}?\n\nComprador: ${venta.comprador}\nProducto: ${venta.producto}\nMonto: ${formatearMoneda(venta.valor)}`);
     
     if (confirmacion) {
         ventas[index].metodo = metodoPago;
         ventas[index].fechaPago = new Date().toISOString();
         guardarDatos();
-        actualizarPendientes();
         actualizarHistorialVentas();
         mostrarToast(`✅ Pago registrado: ${formatearMoneda(venta.valor)} en ${metodoPago}`, 'success');
+        
+        // Verificar si el comprador aún tiene pendientes
+        const ventasPendientesComprador = ventas.filter(v => v.metodo === 'pendiente' && v.comprador === nombreComprador);
+        
+        if (ventasPendientesComprador.length > 0) {
+            // Actualizar el detalle con las ventas restantes
+            const comprador = {
+                nombre: nombreComprador,
+                ventas: ventasPendientesComprador,
+                total: ventasPendientesComprador.reduce((sum, v) => sum + v.valor, 0)
+            };
+            mostrarDetalleComprador(comprador);
+        } else {
+            // Volver a la lista si no hay más pendientes
+            volverAListaPendientes();
+        }
+        
+        actualizarPendientes();
     }
 }
 
@@ -436,21 +463,130 @@ function eliminarVenta(index) {
     if (index < 0 || index >= ventas.length) return;
     
     const venta = ventas[index];
+    const nombreComprador = venta.comprador;
     const confirmacion = confirm(`¿Eliminar esta venta?\n\nComprador: ${venta.comprador}\nProducto: ${venta.producto}\nMonto: ${formatearMoneda(venta.valor)}\n\n⚠️ Esta acción no se puede deshacer.`);
     
     if (confirmacion) {
         ventas.splice(index, 1);
         guardarDatos();
-        actualizarPendientes();
         actualizarHistorialVentas();
         mostrarToast('🗑️ Venta eliminada', 'info');
+        
+        // Verificar si el comprador aún tiene pendientes
+        const ventasPendientesComprador = ventas.filter(v => v.metodo === 'pendiente' && v.comprador === nombreComprador);
+        
+        if (ventasPendientesComprador.length > 0) {
+            // Actualizar el detalle con las ventas restantes
+            const comprador = {
+                nombre: nombreComprador,
+                ventas: ventasPendientesComprador,
+                total: ventasPendientesComprador.reduce((sum, v) => sum + v.valor, 0)
+            };
+            mostrarDetalleComprador(comprador);
+        } else {
+            // Volver a la lista si no hay más pendientes
+            volverAListaPendientes();
+        }
+        
+        actualizarPendientes();
     }
 }
 
-// Buscar en pendientes
+// Mostrar detalle del comprador
+function mostrarDetalleComprador(comprador) {
+    const listaPendientes = document.getElementById('listaPendientes');
+    const detalleComprador = document.getElementById('detalleComprador');
+    
+    listaPendientes.style.display = 'none';
+    detalleComprador.style.display = 'block';
+    
+    let html = `
+        <div class="detalle-header">
+            <div class="detalle-titulo">👤 ${comprador.nombre}</div>
+            <div class="detalle-total">${formatearMoneda(comprador.total)}</div>
+        </div>
+        
+        <div class="detalle-actions">
+            <button class="btn-whatsapp" onclick="enviarWhatsApp('${comprador.nombre}', ${JSON.stringify(comprador.ventas).replace(/"/g, '&quot;')})">
+                📱 Enviar por WhatsApp
+            </button>
+            <button class="btn-volver" onclick="volverAListaPendientes()">
+                ← Volver
+            </button>
+        </div>
+        
+        <div class="detalle-ventas">
+    `;
+    
+    comprador.ventas.forEach(venta => {
+        const ventaIndex = ventas.indexOf(venta);
+        const fecha = new Date(venta.fecha);
+        const diasPendiente = Math.floor((new Date() - fecha) / (1000 * 60 * 60 * 24));
+        
+        html += `
+            <div class="venta-item-detalle">
+                <div class="venta-item-info">
+                    <div class="venta-item-producto">📦 ${venta.producto}</div>
+                    <div class="venta-item-fecha">
+                        📅 ${fecha.toLocaleDateString('es-CL')} 
+                        (${diasPendiente} día${diasPendiente !== 1 ? 's' : ''})
+                    </div>
+                </div>
+                <div class="venta-item-monto">${formatearMoneda(venta.valor)}</div>
+                <div class="venta-item-actions">
+                    <button class="btn-pagar" onclick="marcarComoPagado(${ventaIndex}, 'efectivo')" title="Pagar en efectivo">💵</button>
+                    <button class="btn-pagar" onclick="marcarComoPagado(${ventaIndex}, 'transferencia')" title="Pagar por transferencia">💳</button>
+                    <button class="btn-eliminar-venta" onclick="eliminarVenta(${ventaIndex})" title="Eliminar venta">🗑️</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    detalleComprador.innerHTML = html;
+}
+
+// Volver a la lista de pendientes
+function volverAListaPendientes() {
+    document.getElementById('listaPendientes').style.display = 'flex';
+    document.getElementById('detalleComprador').style.display = 'none';
+}
+
+// Enviar detalle por WhatsApp
+function enviarWhatsApp(nombreComprador, ventasArray) {
+    const ventas = typeof ventasArray === 'string' ? JSON.parse(ventasArray.replace(/&quot;/g, '"')) : ventasArray;
+    
+    let mensaje = `Hola ${nombreComprador}! 👋\n\n`;
+    mensaje += `Te envío el detalle de tus compras pendientes:\n\n`;
+    mensaje += `━━━━━━━━━━━━━━━━━━━━\n`;
+    
+    let total = 0;
+    ventas.forEach((venta, index) => {
+        const fecha = new Date(venta.fecha);
+        mensaje += `\n${index + 1}. ${venta.producto}\n`;
+        mensaje += `   💰 ${formatearMoneda(venta.valor)}\n`;
+        mensaje += `   📅 ${fecha.toLocaleDateString('es-CL')}\n`;
+        total += venta.valor;
+    });
+    
+    mensaje += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+    mensaje += `\n*TOTAL A PAGAR: ${formatearMoneda(total)}*\n\n`;
+    mensaje += `Gracias por tu preferencia! 🙏`;
+    
+    // Codificar el mensaje para URL
+    const mensajeCodificado = encodeURIComponent(mensaje);
+    
+    // Abrir WhatsApp (sin número específico, el usuario elige el contacto)
+    const urlWhatsApp = `https://wa.me/?text=${mensajeCodificado}`;
+    
+    window.open(urlWhatsApp, '_blank');
+    mostrarToast('📱 Abriendo WhatsApp...', 'info');
+}
+
+// Buscar en pendientes por comprador
 document.getElementById('buscarPendiente').addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase();
-    const items = document.querySelectorAll('.pendiente-item');
+    const items = document.querySelectorAll('.comprador-group');
     
     items.forEach(item => {
         const text = item.textContent.toLowerCase();
@@ -461,6 +597,221 @@ document.getElementById('buscarPendiente').addEventListener('input', (e) => {
         }
     });
 });
+
+// Análisis de Productos
+function mostrarAnalisisProductos() {
+    const analisisDiv = document.getElementById('analisisProductos');
+    const reporteDiv = document.getElementById('reporteContenido');
+    
+    // Ocultar reporte y mostrar análisis
+    reporteDiv.style.display = 'none';
+    document.getElementById('exportarBtn').style.display = 'none';
+    analisisDiv.style.display = 'block';
+    
+    if (ventas.length === 0) {
+        analisisDiv.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📊</div>
+                <div class="empty-state-text">No hay ventas para analizar</div>
+            </div>
+        `;
+        return;
+    }
+    
+    // Analizar productos
+    const productosMap = {};
+    let totalVentas = 0;
+    let totalIngresos = 0;
+    
+    ventas.forEach(venta => {
+        if (!productosMap[venta.producto]) {
+            productosMap[venta.producto] = {
+                nombre: venta.producto,
+                cantidad: 0,
+                ingresos: 0,
+                ultimaVenta: venta.fecha
+            };
+        }
+        productosMap[venta.producto].cantidad++;
+        productosMap[venta.producto].ingresos += venta.valor;
+        
+        // Actualizar última venta si es más reciente
+        if (new Date(venta.fecha) > new Date(productosMap[venta.producto].ultimaVenta)) {
+            productosMap[venta.producto].ultimaVenta = venta.fecha;
+        }
+        
+        totalVentas++;
+        totalIngresos += venta.valor;
+    });
+    
+    // Convertir a array y ordenar por cantidad vendida
+    const productosArray = Object.values(productosMap).sort((a, b) => b.cantidad - a.cantidad);
+    
+    // Calcular porcentajes y categorizar
+    productosArray.forEach(producto => {
+        producto.porcentajeVentas = (producto.cantidad / totalVentas * 100).toFixed(1);
+        producto.porcentajeIngresos = (producto.ingresos / totalIngresos * 100).toFixed(1);
+        producto.promedioVenta = producto.ingresos / producto.cantidad;
+    });
+    
+    // Categorizar productos (Regla 80/20 adaptada)
+    let acumuladoVentas = 0;
+    const topSellers = [];
+    const mediumSellers = [];
+    const lowSellers = [];
+    
+    productosArray.forEach(producto => {
+        acumuladoVentas += parseFloat(producto.porcentajeVentas);
+        
+        if (acumuladoVentas <= 60) {
+            topSellers.push(producto);
+        } else if (acumuladoVentas <= 85) {
+            mediumSellers.push(producto);
+        } else {
+            lowSellers.push(producto);
+        }
+    });
+    
+    // Generar HTML
+    let html = `
+        <div class="analysis-header">
+            <div class="analysis-title">📊 Análisis de Productos</div>
+            <div class="analysis-period">Total: ${totalVentas} ventas</div>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-box-value">${productosArray.length}</div>
+                <div class="stat-box-label">Productos Diferentes</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-box-value">${formatearMoneda(totalIngresos)}</div>
+                <div class="stat-box-label">Ingresos Totales</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-box-value">${formatearMoneda(totalIngresos / totalVentas)}</div>
+                <div class="stat-box-label">Ticket Promedio</div>
+            </div>
+        </div>
+        
+        <div class="product-categories">
+    `;
+    
+    // Top Sellers (60% de las ventas)
+    if (topSellers.length > 0) {
+        html += `
+            <div class="category-section top-sellers">
+                <div class="category-header">
+                    <div class="category-title">🏆 Productos Estrella</div>
+                    <div class="category-badge">${topSellers.length} producto${topSellers.length !== 1 ? 's' : ''}</div>
+                </div>
+                <p style="color:#666; margin-bottom:1em;">Generan el ${topSellers.reduce((sum, p) => sum + parseFloat(p.porcentajeVentas), 0).toFixed(1)}% de las ventas. ¡Mantén siempre en stock!</p>
+        `;
+        
+        topSellers.forEach(producto => {
+            const diasDesdeUltimaVenta = Math.floor((new Date() - new Date(producto.ultimaVenta)) / (1000 * 60 * 60 * 24));
+            html += `
+                <div class="product-item">
+                    <div class="product-item-info">
+                        <div class="product-item-name">🌟 ${producto.nombre}</div>
+                        <div class="product-item-stats">
+                            <span>📦 ${producto.cantidad} ventas (${producto.porcentajeVentas}%)</span>
+                            <span>💰 ${producto.porcentajeIngresos}% de ingresos</span>
+                            <span>⏰ Última venta: hace ${diasDesdeUltimaVenta} día${diasDesdeUltimaVenta !== 1 ? 's' : ''}</span>
+                        </div>
+                    </div>
+                    <div class="product-item-revenue">${formatearMoneda(producto.ingresos)}</div>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+    }
+    
+    // Medium Sellers (25% de las ventas)
+    if (mediumSellers.length > 0) {
+        html += `
+            <div class="category-section medium-sellers">
+                <div class="category-header">
+                    <div class="category-title">⚡ Productos Regulares</div>
+                    <div class="category-badge">${mediumSellers.length} producto${mediumSellers.length !== 1 ? 's' : ''}</div>
+                </div>
+                <p style="color:#666; margin-bottom:1em;">Ventas moderadas. Mantén stock razonable.</p>
+        `;
+        
+        mediumSellers.forEach(producto => {
+            const diasDesdeUltimaVenta = Math.floor((new Date() - new Date(producto.ultimaVenta)) / (1000 * 60 * 60 * 24));
+            html += `
+                <div class="product-item">
+                    <div class="product-item-info">
+                        <div class="product-item-name">📦 ${producto.nombre}</div>
+                        <div class="product-item-stats">
+                            <span>📦 ${producto.cantidad} ventas (${producto.porcentajeVentas}%)</span>
+                            <span>💰 ${producto.porcentajeIngresos}% de ingresos</span>
+                            <span>⏰ Última venta: hace ${diasDesdeUltimaVenta} día${diasDesdeUltimaVenta !== 1 ? 's' : ''}</span>
+                        </div>
+                    </div>
+                    <div class="product-item-revenue">${formatearMoneda(producto.ingresos)}</div>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+    }
+    
+    // Low Sellers (15% de las ventas)
+    if (lowSellers.length > 0) {
+        html += `
+            <div class="category-section low-sellers">
+                <div class="category-header">
+                    <div class="category-title">⚠️ Productos de Baja Rotación</div>
+                    <div class="category-badge">${lowSellers.length} producto${lowSellers.length !== 1 ? 's' : ''}</div>
+                </div>
+                <p style="color:#666; margin-bottom:1em;">Ventas bajas. Considera reducir inventario o descontinuar.</p>
+        `;
+        
+        lowSellers.forEach(producto => {
+            const diasDesdeUltimaVenta = Math.floor((new Date() - new Date(producto.ultimaVenta)) / (1000 * 60 * 60 * 24));
+            html += `
+                <div class="product-item">
+                    <div class="product-item-info">
+                        <div class="product-item-name">📉 ${producto.nombre}</div>
+                        <div class="product-item-stats">
+                            <span>📦 ${producto.cantidad} ventas (${producto.porcentajeVentas}%)</span>
+                            <span>💰 ${producto.porcentajeIngresos}% de ingresos</span>
+                            <span>⏰ Última venta: hace ${diasDesdeUltimaVenta} día${diasDesdeUltimaVenta !== 1 ? 's' : ''}</span>
+                        </div>
+                    </div>
+                    <div class="product-item-revenue">${formatearMoneda(producto.ingresos)}</div>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+    }
+    
+    html += '</div>';
+    
+    // Recomendaciones
+    html += `
+        <div class="recommendation">
+            <div class="recommendation-title">💡 Recomendaciones</div>
+            <div class="recommendation-text">
+                <strong>Productos Estrella (${topSellers.length}):</strong> Estos productos generan la mayor parte de tus ventas. 
+                Asegúrate de mantenerlos siempre en stock y considera aumentar su visibilidad.<br><br>
+                
+                <strong>Productos Regulares (${mediumSellers.length}):</strong> Tienen ventas moderadas. 
+                Mantén un stock equilibrado y monitorea su desempeño.<br><br>
+                
+                <strong>Productos de Baja Rotación (${lowSellers.length}):</strong> Considera reducir el inventario de estos productos 
+                o evaluar si vale la pena mantenerlos en tu catálogo. Podrías hacer promociones para liquidarlos.
+            </div>
+        </div>
+    `;
+    
+    analisisDiv.innerHTML = html;
+    mostrarToast('📊 Análisis generado exitosamente', 'success');
+}
 
 // Inicializar
 actualizarListas();

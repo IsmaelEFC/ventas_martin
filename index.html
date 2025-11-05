@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ventas al detalle "Martin"</title>
+    <title>Ventas Martín</title>
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="styles.css">
     <script src="app.js" defer></script>
@@ -145,10 +145,11 @@
             </div>
             
             <div class="filter-card">
-                <input type="text" id="buscarPendiente" placeholder="🔍 Buscar por comprador o producto...">
+                <input type="text" id="buscarPendiente" placeholder="🔍 Buscar por comprador...">
             </div>
             
             <div id="listaPendientes" class="pendientes-list"></div>
+            <div id="detalleComprador" class="detalle-comprador" style="display:none;"></div>
         </section>
         
         <!-- Sección de Reportes -->
@@ -161,7 +162,12 @@
                 <button onclick="generarReporte('todo')" class="btn-report">🗂️ Todo</button>
             </div>
             
+            <div class="analysis-section">
+                <button onclick="mostrarAnalisisProductos()" class="btn-analysis">📊 Análisis de Productos</button>
+            </div>
+            
             <div id="reporteContenido" class="report-content"></div>
+            <div id="analisisProductos" class="analysis-content" style="display:none;"></div>
             <button id="exportarBtn" class="btn-export" style="display:none;" onclick="exportarReporte()">📥 Exportar Reporte</button>
         </section>
     </main>

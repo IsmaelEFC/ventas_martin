@@ -1,5 +1,5 @@
 // service-worker.js
-const CACHE_NAME = 'ventas-pwa-v1';
+const CACHE_NAME = 'ventas-martín-v1';
 const urlsToCache = [
     '/',
     'index.html',
